@@ -16,6 +16,10 @@ type DB struct {
 	data    *[maxMapSize]byte
 	dataref []byte
 	datasz  int
+	meta    *meta
+	ops     struct {
+		writeAt func(b []byte, off int64) (n int, err error)
+	}
 }
 
 // Open open db file
@@ -29,13 +33,14 @@ func Open(path string, mode os.FileMode) (*DB, error) {
 	}
 	db.file = *file
 	db.path = file.Name()
+	db.ops.writeAt = file.WriteAt
 	if finfo, err := file.Stat(); err != nil {
 		return nil, err
 	} else if finfo.Size() == 0 {
 		// init db file
 		db.init()
 	} else {
-		//TODO check file
+		//TODO check file c
 	}
 	if err := db.mmap(); err != nil {
 		return nil, err
@@ -45,8 +50,8 @@ func Open(path string, mode os.FileMode) (*DB, error) {
 
 // init init db file
 func (db *DB) init() {
-	buf := make([]byte, db.pagesz*2)
-	pg := db.pageInbuffer(buf, 0)
+	buf := make([]byte, db.pagesz*5)
+	pg := db.pageInbuffer(buf, pgid(0))
 	pg.id = 0
 	m := pg.meta()
 	m.magic = magic
@@ -87,6 +92,7 @@ func (db *DB) mmap() error {
 	db.data = (*[maxMapSize]byte)(unsafe.Pointer(&b[0]))
 	db.datasz = int(sz)
 
+	db.meta = db.page(0).meta()
 	return nil
 }
 func (db *DB) munmap() error {
@@ -101,4 +107,19 @@ func (db *DB) munmap() error {
 }
 func (db *DB) page(id pgid) *page {
 	return (*page)(unsafe.Pointer(&db.data[id*pgid(db.pagesz)]))
+}
+
+func (db *DB) Update(fn func(*Tx) error) error {
+	t, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	err = fn(t)
+
+	return err
+}
+
+func (db *DB) Begin() (*Tx, error) {
+	t := newTx(db)
+	return t, nil
 }
