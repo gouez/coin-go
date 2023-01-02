@@ -1,6 +1,9 @@
 package blockchain
 
 import (
+	"bytes"
+	"encoding/gob"
+	"log"
 	"time"
 
 	"github.com/gouez/coin-go/lib/chainhash"
@@ -27,4 +30,27 @@ func NewBlock(prevHash chainhash.Hash, data []byte) *Block {
 	block.BlockHeader.Nonce = nonce
 	block.Hash = hash
 	return block
+}
+
+func (b *Block) Serialize() []byte {
+	var res bytes.Buffer
+	encoder := gob.NewEncoder(&res)
+
+	err := encoder.Encode(b)
+
+	if err != nil {
+		log.Panic(err)
+	}
+
+	return res.Bytes()
+}
+
+func Deserialize(data []byte) *Block {
+	var block Block
+	decoder := gob.NewDecoder(bytes.NewReader(data))
+	err := decoder.Decode(&block)
+	if err != nil {
+		log.Panic(err)
+	}
+	return &block
 }

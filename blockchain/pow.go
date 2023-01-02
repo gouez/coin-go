@@ -6,19 +6,21 @@ import (
 	"github.com/gouez/coin-go/lib/chainhash"
 )
 
+const Difficulty = 12
+
+// pow
 type ProofOfWork struct {
 	block  *Block
-	target big.Int
+	target *big.Int
 }
 
 func NewProofOfWork(block *Block) *ProofOfWork {
+	target := big.NewInt(1)
+	target.Lsh(target, uint(256-Difficulty))
 	pow := &ProofOfWork{
-		block: block,
+		block:  block,
+		target: target,
 	}
-	targetStr := "00f000000000000000000000000000000000000000000000000000000000000"
-	tmpInt := big.Int{}
-	tmpInt.SetString(targetStr, 16)
-	pow.target = tmpInt
 	return pow
 }
 
@@ -29,7 +31,7 @@ func (pow *ProofOfWork) Run() (chainhash.Hash, uint32) {
 		hash := pow.block.BlockHeader.BlockHash()
 		tmpInt := big.Int{}
 		tmpInt.SetBytes(hash[:])
-		if tmpInt.Cmp(&pow.target) == -1 {
+		if tmpInt.Cmp(pow.target) == -1 {
 			return hash, nonce
 		}
 		nonce++

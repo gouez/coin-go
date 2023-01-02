@@ -2,6 +2,8 @@ package blockchain
 
 import "github.com/gouez/coin-go/lib/chainhash"
 
+const dbPath = "./tmp/blocks"
+
 // BlockChain stores all block
 type BlockChain struct {
 	blocks []*Block

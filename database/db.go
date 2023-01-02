@@ -1,125 +1,72 @@
 package database
 
 import (
-	"fmt"
-	"os"
-	"syscall"
-	"unsafe"
+	"sync"
 )
 
-const maxMapSize = 0xFFFFFFFFFFFF
-
 type DB struct {
-	pagesz  int
-	file    os.File
-	path    string
-	data    *[maxMapSize]byte
-	dataref []byte
-	datasz  int
-	meta    *meta
-	ops     struct {
-		writeAt func(b []byte, off int64) (n int, err error)
-	}
+	*dbfile
+	isOpend bool
+	mu      sync.RWMutex
+	index   *index
 }
 
-// Open open db file
-func Open(path string, mode os.FileMode) (*DB, error) {
-	db := &DB{
-		pagesz: os.Getpagesize(),
+// Put put a key/value to db
+func (db *DB) Put(key []byte, value []byte) (err error) {
+	if len(key) == 0 {
+		return
 	}
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, mode)
+	v, err := db.Get(key)
+	if len(v) > 0 {
+		return
+	}
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	err = db.dbfile.writemmap(newRecord(
+		key, value, M_PUT,
+	))
+	if err != nil {
+		return err
+	}
+	db.index.createIndex(string(key), db.offset)
+	return err
+}
+
+// Get get value with given key
+func (db *DB) Get(key []byte) ([]byte, error) {
+	if len(key) == 0 {
+		return nil, nil
+	}
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	offset := db.index.getIndex(string(key))
+	r, err := db.dbfile.read(offset)
 	if err != nil {
 		return nil, err
 	}
-	db.file = *file
-	db.path = file.Name()
-	db.ops.writeAt = file.WriteAt
-	if finfo, err := file.Stat(); err != nil {
+	return r.value(), nil
+}
+
+// Open opens a db file,created if it not existed
+func Open(name string) (*DB, error) {
+	f, err := newDBFile(name, 0666)
+	if err != nil {
 		return nil, err
-	} else if finfo.Size() == 0 {
-		// init db file
-		db.init()
-	} else {
-		//TODO check file c
 	}
-	if err := db.mmap(); err != nil {
-		return nil, err
+	db := &DB{
+		dbfile:  f,
+		isOpend: true,
+		index:   newIndex(),
 	}
 	return db, nil
 }
 
-// init init db file
-func (db *DB) init() {
-	buf := make([]byte, db.pagesz*5)
-	pg := db.pageInbuffer(buf, pgid(0))
-	pg.id = 0
-	m := pg.meta()
-	m.magic = magic
-	m.root = bucket{root: 1}
-
-	pg = db.pageInbuffer(buf[:], pgid(1))
-	pg.flags = leafPageFlag
-	pg.id = 1
-	pg.count = 0
-
-	db.file.WriteAt(buf, 0)
-}
-
-func (db *DB) pageInbuffer(buf []byte, id pgid) *page {
-	return (*page)(unsafe.Pointer(&buf[id*pgid(db.pagesz)]))
-}
-
-func (db *DB) mmap() error {
-	info, err := db.file.Stat()
-	if err != nil {
-		return fmt.Errorf("mmap stat error: %s", err)
+// Close close db
+func (db *DB) Close() {
+	if !db.isOpend {
+		db.file.Close()
+		db.dbfile.ummap()
 	}
-	if err := db.munmap(); err != nil {
-		return err
-	}
-	sz := info.Size()
-	b, err := syscall.Mmap(int(db.file.Fd()), 0, int(sz), syscall.PROT_READ, syscall.MAP_SHARED)
-	if err != nil {
-		return err
-	}
-
-	err = syscall.Madvise(b, syscall.MADV_RANDOM)
-	if err != nil && err != syscall.ENOSYS {
-		return fmt.Errorf("madvise: %s", err)
-	}
-
-	db.dataref = b
-	db.data = (*[maxMapSize]byte)(unsafe.Pointer(&b[0]))
-	db.datasz = int(sz)
-
-	db.meta = db.page(0).meta()
-	return nil
-}
-func (db *DB) munmap() error {
-	if db.dataref == nil {
-		return nil
-	}
-	err := syscall.Munmap(db.dataref)
-	db.dataref = nil
-	db.data = nil
-	db.datasz = 0
-	return err
-}
-func (db *DB) page(id pgid) *page {
-	return (*page)(unsafe.Pointer(&db.data[id*pgid(db.pagesz)]))
-}
-
-func (db *DB) Update(fn func(*Tx) error) error {
-	t, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	err = fn(t)
-
-	return err
-}
-
-func (db *DB) Begin() (*Tx, error) {
-	t := newTx(db)
-	return t, nil
 }
