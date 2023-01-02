@@ -42,6 +42,7 @@ func decodeRecordHeader(buf []byte) *record {
 	return (*record)(unsafe.Pointer(&buf[0]))
 }
 
+// r to []byte
 func (r *record) write() []byte {
 	data := (*(*[rdataMaxSize]byte)(unsafe.Pointer(r)))[:rheaderSize+uintptr(r.ksz)+uintptr(r.vsz)]
 	return data
