@@ -29,7 +29,7 @@ func (db *DB) Put(key []byte, value []byte) (err error) {
 	if err != nil {
 		return err
 	}
-	db.index.createIndex(string(key), db.offset)
+	db.index.createIndex(key, db.offset)
 	return err
 }
 

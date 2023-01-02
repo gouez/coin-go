@@ -76,6 +76,7 @@ func (f *dbfile) ummap() error {
 	return nil
 }
 
+// read read k/v from disk use index
 func (f *dbfile) read(offset int64) (r *record, err error) {
 	buf := make([]byte, rheaderSize)
 	if _, err = f.file.ReadAt(buf, offset); err != nil {
@@ -90,6 +91,7 @@ func (f *dbfile) read(offset int64) (r *record, err error) {
 	return
 }
 
+// grow grows db file
 func (f *dbfile) grow(size int64) error {
 	if info, _ := f.file.Stat(); info.Size() >= size {
 		return nil

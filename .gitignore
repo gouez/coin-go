@@ -3,3 +3,4 @@
 *.dat
 *.a
 .DS_Store
+*.db
